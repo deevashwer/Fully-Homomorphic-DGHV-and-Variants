@@ -8,7 +8,7 @@
 
 #define rho 13//26
 #define sigma 26//42
-#define eta 250//988
+#define eta 988
 #define gamma 9216//147456
 #define tau 100//158
 #define Theta 150
@@ -233,7 +233,7 @@ GEN add_bit(GEN ct_1, GEN ct_2, GEN x_0){
 
 GEN addition_gate(GEN ct_1, GEN ct_2, GEN pk, int n){
     if (n == -1)
-    	int n = lg(ct_1) - 1;
+    	n = lg(ct_1) - 1;
     int m = lg(ct_2) - 1;
     //cout << n << m << endl;
     GEN result = cgetg(max(n, m) + 2, t_VEC);
@@ -281,33 +281,34 @@ GEN addition_gate(GEN ct_1, GEN ct_2, GEN pk, int n){
     return result;
 }
 
-GEN multiplication_utility(GEN result, GEN ct, GEN pk, int i){
+GEN multiplication_utility(GEN result, GEN ct, GEN pk, GEN sk, int i){
 	int n = lg(ct) - 1;
 	GEN temp = cgetg(n + i + 1, t_VEC);
 	for(int j = 0; j < i; j++)
 		gel(temp, j + 1) = gen_0;
 	for(int j = 0; j < n; j++)
-		gel(temp, j + 1 + i) = gel(ct, i);
+		gel(temp, j + 1 + i) = gel(ct, j + 1);
+    cout << "temp=" << GENtostr(decrypt(sk, temp)) << " ";
 	result = addition_gate(result, temp, pk, n + i);
 	return result;
 }
 
-GEN multiplication_gate(GEN ct_1, GEN ct_2, GEN pk){
+GEN multiplication_gate(GEN ct_1, GEN ct_2, GEN pk, GEN sk){
 	int n = lg(ct_1) - 1, m = lg(ct_2) - 1;
-	//cout << GENtostr(ct_1) << endl;
-	//cout << GENtostr(ct_2) << endl;
+	cout << GENtostr(decrypt(sk, ct_1)) << endl;
+	cout << GENtostr(decrypt(sk, ct_2)) << endl;
 	GEN result = cgetg(m + n + 1, t_VEC);
 	GEN temp = cgetg(n + 1, t_VEC);
 	for(int i = 0; i < m + n; i++)
 		gel(result, i + 1) = gen_0;
 	for(int j = 0; j < n; j++)
 		gel(result, j + 1) = multiply_bit(gel(ct_1, j + 1), gel(ct_2, 1), pk);
-	//cout << GENtostr(result) << endl;
+	cout << GENtostr(decrypt(sk, result)) << endl;
 	for(int i = 1; i < m; i++){
 		for(int j = 0; j < n; j++)
 			gel(temp, j + 1) = multiply_bit(gel(ct_1, j + 1), gel(ct_2, i + 1), pk);
-		//cout << GENtostr(temp) << " " << i << endl;
-		result = multiplication_utility(result, temp, pk, i);
+		result = multiplication_utility(result, temp, pk, sk, i);
+        cout << "result=" << GENtostr(decrypt(sk, result)) << endl;
 	}
 	return result;
 }
@@ -339,7 +340,7 @@ int main() {
     if(!pk_file){
         //printf("Error: Public Key");
         fclose(pk_file);
-        GEN pk = key_gen(sk);
+        pk = key_gen(sk);
         ofstream pk_file("public_key.txt");
         for(int i = 0; i < tau + gamma; i++)
             pk_file << GENtostr(gel(pk, i + 1)) << endl;
@@ -353,15 +354,19 @@ int main() {
         }
         fclose(pk_file);
     }
+
+    //pk = key_gen(sk);
+
     //printf("Hello!");
     //GEN ct_1 = encrypt_bit(sk, pk, stoi(0));
     //GEN ct_2 = encrypt_bit(sk, pk, stoi(1));
 
-    GEN ct_1 = encrypt(sk, pk, stoi(2));
+    GEN ct_1 = encrypt(sk, pk, stoi(5));
     GEN ct_2 = encrypt(sk, pk, stoi(3));
 
 
-    GEN pt = decrypt(sk, multiplication_gate(ct_1, ct_2, pk));
+    GEN pt = decrypt(sk, multiplication_gate(ct_1, ct_2, pk, sk));
+    //GEN pt = decrypt(sk, addition_gate(ct_1, ct_2, pk, -1));
     //GEN pt = decrypt(sk, multiplication_gate(ct_1, ct_2, pk));
 
     //GEN pt = decrypt_bit(sk, multiply_bit(ct_1, ct_2, pk));
