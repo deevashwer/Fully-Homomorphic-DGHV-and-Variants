@@ -1,24 +1,5 @@
-#include <iostream>
-#include <cstdlib>
-#include <pari/pari.h>
-#include <ctime>
-#include <sys/time.h>
-#include <vector>
 #include <fstream>
-
-#define rho 10//26
-#define sigma 20//42
-#define eta 988
-#define gamma 9216//147456
-#define tau 100//158
-#define Theta 150
-#define theta 15
-#define kappa (gamma + 2)
-
-#define RAND_MAX (1 << rho + 1)
-
-struct timeval tv;
-//GEN total_error = gen_0;
+#include "DGHV_utils.h"
 
 /*
  * For the above (commented) values of parameters, we have a security level of 42 bits
@@ -27,415 +8,347 @@ struct timeval tv;
 
 using namespace std;
 
-// Generate errors between (0, 2^rho)
-int generate_error(){
-    return (rand() % RAND_MAX);// - (RAND_MAX / 2);
+void print(GEN x){
+    cout << GENtostr(x) << endl;
+    return;
 }
 
-// Returns a reverse bit vector of integer m
-GEN decimal_to_binary_rev(GEN m){
-    //cout << "Checkpoint " << GENtostr(m) << " " << gcmp(m, stoi(6)) << endl;
-    if(gcmp(m, gen_0) == 0){
-        GEN binary_m = cgetg(2, t_VEC);
-        gel(binary_m, 1) = gen_0;
-        return binary_m;
-    }
-    vector<bool> bits;
-    //int count = 5;
-    GEN temp;
-    while(mpcmp(m, gen_1) > 0){
-    //while(gcmp(m, gen_0) > 0 && count-- > 0){
-        if(mpodd(m) == 1)
-            bits.push_back(true);
-        else
-            bits.push_back(false);
-        m = gdivexact(m, gen_2);
-        //cout << "Checkpoint " << GENtostr(m) << " " << gcmp(gadd(m, gen_1), gen_1) << endl;
-    }
-    //cout << "Checkpoint " << mpcmp(gen_0, stoi(1)) << endl;
-    bits.push_back(true);
-    GEN binary_m = cgetg(bits.size() + 1, t_VEC);
-    int i = 1;
-    vector<bool>::iterator it;
-    for(it = bits.begin(); it != bits.end(); it++)
-        if(*it == true)
-            gel(binary_m, i++) = gen_1;
-        else
-            gel(binary_m, i++) = gen_0;
-    bits.clear();
-    return binary_m;
-}
+class cryptosystem{
+public:
+    GEN sk;
+    GEN pk[tau + gamma];
 
-// Returns secondary error of sigma bits, used at the time of encryption. 
-GEN generate_secondary_error(){
-    pari_sp ltop, lbot;
-    gettimeofday(&tv, NULL);
-    srand(tv.tv_usec + tv.tv_sec*1000000);
-    GEN r = stoi(rand());
-    for(int i = sigma - 33; i >= 0; i -= 32){
-        ltop = avma;
-        GEN temp = gshift(stoi(rand()), i);
-        lbot = avma;
-        gaddz(r, temp, r);
-        gerepile(ltop, lbot, r);
-        //cout << i << "\t" << GENtostr(temp) << endl;
-    }
-    return r;
-}
-
-// Outputs secret key, an odd integer in the range (2^(eta - 1), 2^eta). 
-GEN generate_secret_key(){
-    pari_sp ltop, lbot;
-    GEN sk = gshift(stoi(1), eta - 1);
-    gettimeofday(&tv, NULL);
-    srand(tv.tv_usec + tv.tv_sec*1000000);
-    for(int i = eta - 33; i >= 0; i -= 32){
-        if(i == eta - 33){
-            unsigned temp = rand();
-            while((temp/(1 << 31)) > 0)
-                temp = rand();
-            sk = gshift(stoi(temp), i);
-            continue;
+    // Constructor
+    cryptosystem(){
+        pari_sp ltop_super;
+        ifstream sk_file("secret_key.txt");
+        if(!sk_file) {
+            //printf("Error: Secret Key!");
+            ltop_super = avma;
+            generate_secret_key();
+            sk = gerepilecopy(ltop_super, sk);
+            sk_file.close();
+            ofstream sk_file("secret_key.txt");
+            sk_file << GENtostr(sk);
+            sk_file.close();
         }
-        ltop = avma;
-        GEN temp = gshift(stoi(rand()), i);
-        lbot = avma;
-        gaddz(sk, temp, sk);
-        gerepile(ltop, lbot, sk);
-        //cout << i << "\t" << GENtostr(temp) << endl;
-    }
-    int least_significant_bits;
-
-    do{
-        least_significant_bits = rand();
-    }while((least_significant_bits & 1) == 0);
-    gaddz(sk, stoi(least_significant_bits), sk);
-    return sk;
-}
-
-// Outputs integers of the form x = sk*(q) + r, where q is a random integer in the range (0, 2^(gamma-eta)) and r is the primary error
-GEN generate_x(GEN sk){
-    pari_sp ltop, lbot, ltop_super;
-    ltop_super =  avma;
-    gettimeofday(&tv, NULL);
-    srand(tv.tv_usec + tv.tv_sec*1000000);
-    GEN q;
-    for(int i = gamma - eta; i >= 0; i -= 32){
-        if(i == gamma - eta){
-            q = gshift(stoi(rand()), i);
-            continue;
+        else{
+            string secret_key;
+            sk_file >> secret_key;
+            sk = gp_read_str(secret_key.c_str());
+            //cout << GENtostr(sk) << endl;
+            sk_file.close();
         }
-        ltop = avma;
-        GEN temp = gshift(stoi(rand()), i);
-        lbot = avma;
-        gaddz(q, temp, q);
-        gerepile(ltop, lbot, q);
-    }
-    gaddz(q, stoi(rand()), q);
-    GEN r = stoi(generate_error());
-    GEN x = gmul(sk, q);
-    gaddz(x, r, x);
-    //cout << GENtostr(r) << endl;
-    //cout << GENtostr(Fp_red(x, sk)) << endl;
-    x = gerepilecopy(ltop_super, x);
-    return x;
-}
 
-// Outputs x_i s.t x_i = q_i*p + r, q_i lies in the range (2^(gamma+length-1-eta), 2^(gamma+length-eta))
-GEN generate_x_i(GEN sk, int length){
-    pari_sp ltop, lbot, ltop_super;
-    ltop_super =  avma;
-    gettimeofday(&tv, NULL);
-    srand(tv.tv_usec + tv.tv_sec*1000000);
-    GEN q;
-    for(int i = length - eta; i >= 0; i -= 32){
-        if(i == length - eta){
-            unsigned temp = rand();
-            while((temp/(1 << 31)) > 0)
-                temp = rand();
-            q = gshift(stoi(temp), i);
-            continue;
+        FILE *pk_file = fopen("public_key.txt", "r");
+        if(!pk_file){
+            //printf("Error: Public Key");
+            fclose(pk_file);
+            generate_public_key();
+            ofstream pk_file("public_key.txt");
+            for(int i = 0; i < tau + gamma; i++)
+                pk_file << GENtostr(pk[i]) << endl;
+            pk_file.close();
         }
-        ltop = avma;
-        GEN temp = gshift(stoi(rand()), i);
-        lbot = avma;
-        gaddz(q, temp, q);
-        gerepile(ltop, lbot, q);
-    }
-    gaddz(q, stoi(rand()), q);
-    GEN r = stoi(generate_error());
-    GEN x = gmul(sk, q);
-    gaddz(x, r, x);
-    //cout << GENtostr(r) << endl;
-    //cout << GENtostr(Fp_red(x, sk)) << endl;
-    x = gerepilecopy(ltop_super, x);
-    return x;
-}
-
-/*
-Outputs public key
-Public key has tau elements of the form x = q*p + r, q lies in the range (0, 2^(gamma-eta))
-It has gamma elements x_i s.t x_i = q_i*p + r, q_i lies in the range (2^(gamma+i-1-eta), 2^(gamma+i-eta))
-*/
-GEN generate_public_key(GEN sk){
-    pari_sp ltop_super, ltop;
-    GEN pk = cgetg(tau + 1 + gamma, t_VEC);
-    int index = 0;
-    vector<int> even;
-    ltop_super = avma;
-    GEN max = gen_0;
-    ltop = avma;
-    do{
-        even.clear();
-        max = gen_0;
-        index = 0;
-        for(int i = 0; i < tau; i++) {
-            gel(pk, i + 1) = generate_x(sk);
-            //cout << i << endl;
-            if(mpcmp(max, gel(pk, i + 1)) < 0){
-                if(mpodd(gel(pk, i + 1)) == 0 || mpodd(Fp_red(gel(pk, i + 1), sk)) == 1){
-                    max = gel(pk, i + 1);
-                    even.push_back(i);
-                    //cout << "even " << i << endl;
-                    continue;
-                }
-                max = gel(pk, i + 1);
-                index = i;
-                even.clear();
-                //cout << "index " << index << endl;
+        else{
+            //pk = cgetg(tau + 1 + gamma, t_VEC);
+            for(int i = 0; i < tau + gamma; i++){
+                pk[i] = gp_read_stream(pk_file);
             }
+            fclose(pk_file);
         }
-    }while(even.size() != 0);
-    cout << "Checkpoint" << endl;
-    for(int i = 1; i < gamma + 1; i++){
-        gel(pk, i + tau) = gmul(generate_x_i(sk, gamma + i), gen_2);
-        cout << "Checkpoint " << i << endl;
     }
-    GEN temp = gel(pk, 1);
-    gel(pk, 1) = max;
-    gel(pk, index + 1) = temp;
-    pk = gerepilecopy(ltop_super, pk);
-    return pk;
-}
 
-// Encrypts a single bit
-GEN encrypt_bit(GEN sk, GEN pk, GEN bit){
-    bool included[tau - 1];
-    gettimeofday(&tv, NULL);
-    srand(tv.tv_usec + tv.tv_sec*1000000);
-    for(int i = 0; i < tau; i++)
-        if((rand() & 1) == 1)
-            included[i] = true;
-        else
-            included[i] = false;
-
-    GEN ct = generate_secondary_error();
-    gmulz(gen_2, ct, ct);
-    gaddz(ct, bit, ct);
-
-    for(int i = 1; i < tau; i++){
-        if(included[i - 1]) {
-            ct = gadd(ct, gmul(gen_2, gel(pk, i + 1)));
+    // Outputs secret key, an odd integer in the range (2^(eta - 1), 2^eta). 
+    GEN generate_secret_key(){
+        pari_sp ltop, lbot;
+        sk = gshift(stoi(1), eta - 1);
+        gettimeofday(&tv, NULL);
+        srand(tv.tv_usec + tv.tv_sec*1000000);
+        for(int i = eta - 33; i >= 0; i -= 32){
+            if(i == eta - 33){
+                unsigned temp = rand();
+                while((temp/(1 << 31)) > 0)
+                    temp = rand();
+                sk = gshift(stoi(temp), i);
+                continue;
+            }
+            ltop = avma;
+            GEN temp = gshift(stoi(rand()), i);
+            lbot = avma;
+            gaddz(sk, temp, sk);
+            gerepile(ltop, lbot, sk);
         }
-        //ct = Fp_red(ct, gel(pk, 1));
+        int least_significant_bits;
+        do{
+            least_significant_bits = rand();
+        }while((least_significant_bits & 1) == 0);
+        gaddz(sk, stoi(least_significant_bits), sk);
     }
-    //cout << GENtostr(ct) << endl;
-    ct = Fp_red(ct, gel(pk, 1));
-    return ct;
-}
 
-// Encrypts an integer
-GEN encrypt(GEN sk, GEN pk, GEN m){
-    //printf("Checkpoint: Encrypt");
-    //cout<<GENtostr(m)<<endl;
-    m = decimal_to_binary_rev(m);
-    long n = lg(m) - 1;
-    GEN ct = cgetg(n + 1, t_VEC);
-    for(int i = 0; i < n; i++)
-        gel(ct, i + 1) = encrypt_bit(sk, pk, gel(m, i + 1));
-    return ct;
-}
-
-// Decrypts a bit
-GEN decrypt_bit(GEN sk, GEN ct){
-    GEN pt = Fp_red(ct, sk);
-    pt = Fp_red(pt, gen_2);
-    return pt;
-}
-
-// Decrypts an integer
-GEN decrypt(GEN sk, GEN ct){
-    int n = lg(ct) - 1;
-    GEN pt = cgetg(n + 1, t_VEC);
-    for(int i = 0; i < n; i++)
-        gel(pt, i + 1) = decrypt_bit(sk, gel(ct, i + 1));
-    return pt;
-}
-
-// Multiply gate for 2 encrypted bits
-GEN multiply_bit(GEN ct_1, GEN ct_2, GEN pk){
-    GEN result = gmul(ct_1, ct_2);
-    for(int i = 0; i < gamma; i++){
-        result = Fp_red(result, gel(pk, gamma + tau - i));
+    /*
+    Outputs public key
+    Public key has tau elements of the form x = q*p + r, q lies in the range (0, 2^(gamma-eta))
+    It has gamma elements x_i s.t x_i = q_i*p + r, q_i lies in the range (2^(gamma+i-1-eta), 2^(gamma+i-eta))
+    */
+    GEN generate_public_key(){
+        pari_sp ltop_super, ltop;
+        //pk = cgetg(tau + 1 + gamma, t_VEC);
+        int index = 0;
+        vector<int> even;
+        ltop_super = avma;
+        GEN max = gen_0;
+        ltop = avma;
+        do{
+            even.clear();
+            max = gen_0;
+            index = 0;
+            for(int i = 0; i < tau; i++) {
+                pk[i] = generate_x(sk);
+                //cout << i << endl;
+                if(mpcmp(max, pk[i]) < 0){
+                    if(mpodd(pk[i]) == 0 || mpodd(Fp_red(pk[i], sk)) == 1){
+                        max = pk[i];
+                        even.push_back(i);
+                        //cout << "even " << i << endl;
+                        continue;
+                    }
+                    max = pk[i];
+                    index = i;
+                    even.clear();
+                    //cout << "index " << index << endl;
+                }
+            }
+        }while(even.size() != 0);
+        //cout << "Checkpoint" << endl;
+        for(int i = 1; i < gamma + 1; i++){
+            pk[i + tau - 1] = gmul(generate_x_i(sk, gamma + i), gen_2);
+            cout << "Checkpoint " << i << endl;
+        }
+        GEN temp = pk[0];
+        pk[0] = max;
+        pk[index] = temp;
+        //pk = gerepilecopy(ltop_super, pk);
     }
-    return result;
-}
 
-// Addition gate for 2 encrypted bits
-GEN add_bit(GEN ct_1, GEN ct_2, GEN x_0){
-    return gmod(gadd(ct_2, ct_1), x_0);
-}
+    // Encrypts a single bit
+    GEN encrypt_bit(GEN bit){
+        bool included[tau - 1];
+        gettimeofday(&tv, NULL);
+        srand(tv.tv_usec + tv.tv_sec*1000000);
+        for(int i = 0; i < tau; i++)
+            if((rand() & 1) == 1)
+                included[i] = true;
+            else
+                included[i] = false;
+        GEN ct = generate_secondary_error();
+        gmulz(gen_2, ct, ct);
+        gaddz(ct, bit, ct);
+        //cout << "Checkpoint" << endl;
+        for(int i = 1; i < tau; i++){
+            if(included[i - 1]) {
+                ct = gadd(ct, gmul(gen_2, pk[i]));
+            }
+            //ct = Fp_red(ct, gel(pk, 1));
+        }
+        //cout << GENtostr(ct) << endl;
+        ct = Fp_red(ct, pk[0]);
+        return ct;
+    }
 
-// Addition gate for 2 encrypted integers
-GEN addition_gate(GEN ct_1, GEN ct_2, GEN pk, int n){
-    if (n == -1)
-    	n = lg(ct_1) - 1;
-    int m = lg(ct_2) - 1;
-    //cout << n << m << endl;
-    GEN result = cgetg(max(n, m) + 2, t_VEC);
-    GEN carry, temp_carry;
-    if(n >= m){
-        gel(result, 1) = add_bit(gel(ct_1, 1), gel(ct_2, 1), gel(pk, 1));
-        carry =  multiply_bit(gel(ct_1, 1), gel(ct_2, 1), pk);
-        //cout << GENtostr(decrypt_bit(sk, gel(result, 1))) << " " << GENtostr(decrypt_bit(sk, carry)) << endl;
-        for(int i = 1; i < m; i++){
-            gel(result, i + 1) = add_bit(gel(ct_1, i + 1), gel(ct_2, i + 1), gel(pk, 1));
-            //cout << "R=A+B= " << GENtostr(decrypt_bit(sk, gel(result, i + 1))) << endl;
-            temp_carry = multiply_bit(gel(result, i + 1), carry, pk);
-            //cout << "C_1=R*C= " << GENtostr(decrypt_bit(sk, temp_carry)) << endl;
-            gel(result, i + 1) = add_bit(gel(result, i + 1), carry, gel(pk, 1));
-            //cout << "S=R+C= " << GENtostr(decrypt_bit(sk, gel(result, i + 1))) << endl;
-            carry =  multiply_bit(gel(ct_1, i + 1), gel(ct_2, i + 1), pk);
-            //cout << "C_2=A*B= " << GENtostr(decrypt_bit(sk, carry)) << endl;
-            carry = add_bit(carry, temp_carry, gel(pk, 1));
-            //cout << "C_1+C_2= " << GENtostr(decrypt_bit(sk, carry)) << endl;
+    /*
+    // Encrypts an integer
+    GEN encrypt(GEN m){
+        //printf("Checkpoint: Encrypt");
+        //cout<<GENtostr(m)<<endl;
+        m = decimal_to_binary_rev(m);
+        long n = lg(m) - 1;
+        GEN ct = cgetg(n + 1, t_VEC);
+        for(int i = 0; i < n; i++)
+            gel(ct, i + 1) = encrypt_bit(sk, pk, gel(m, i + 1));
+        return ct;
+    }*/
+
+    // Decrypts a bit
+    GEN decrypt_bit(GEN ct){
+        GEN pt = Fp_red(ct, sk);
+        pt = Fp_red(pt, gen_2);
+        return pt;
+    }
+
+    /*
+    // Decrypts an integer
+    GEN decrypt(GEN ct){
+        int n = lg(ct) - 1;
+        GEN pt = cgetg(n + 1, t_VEC);
+        for(int i = 0; i < n; i++)
+            gel(pt, i + 1) = decrypt_bit(sk, gel(ct, i + 1));
+        return pt;
+    }*/
+
+    // Multiply gate for 2 encrypted bits
+    GEN multiply_bit(GEN ct_1, GEN ct_2){
+        GEN result = gmul(ct_1, ct_2);
+        for(int i = 0; i < gamma; i++){
+            result = Fp_red(result, pk[gamma + tau - i - 1]);
+        }
+        //result = Fp_red(result, pk[0]);
+        return result;
+    }
+
+    // Addition gate for 2 encrypted bits
+    GEN add_bit(GEN ct_1, GEN ct_2){
+        return gmod(gadd(ct_2, ct_1), pk[0]);
+    }
+
+    /*
+    // Addition gate for 2 encrypted integers
+    GEN addition_gate(GEN ct_1, GEN ct_2, int n){
+        if (n == -1)
+            n = lg(ct_1) - 1;
+        int m = lg(ct_2) - 1;
+        //cout << n << m << endl;
+        GEN result = cgetg(max(n, m) + 2, t_VEC);
+        GEN carry, temp_carry;
+        if(n >= m){
+            gel(result, 1) = add_bit(gel(ct_1, 1), gel(ct_2, 1), gel(pk, 1));
+            carry =  multiply_bit(gel(ct_1, 1), gel(ct_2, 1), pk);
+            //cout << GENtostr(decrypt_bit(sk, gel(result, 1))) << " " << GENtostr(decrypt_bit(sk, carry)) << endl;
+            for(int i = 1; i < m; i++){
+                gel(result, i + 1) = add_bit(gel(ct_1, i + 1), gel(ct_2, i + 1), gel(pk, 1));
+                //cout << "R=A+B= " << GENtostr(decrypt_bit(sk, gel(result, i + 1))) << endl;
+                temp_carry = multiply_bit(gel(result, i + 1), carry, pk);
+                //cout << "C_1=R*C= " << GENtostr(decrypt_bit(sk, temp_carry)) << endl;
+                gel(result, i + 1) = add_bit(gel(result, i + 1), carry, gel(pk, 1));
+                //cout << "S=R+C= " << GENtostr(decrypt_bit(sk, gel(result, i + 1))) << endl;
+                carry =  multiply_bit(gel(ct_1, i + 1), gel(ct_2, i + 1), pk);
+                //cout << "C_2=A*B= " << GENtostr(decrypt_bit(sk, carry)) << endl;
+                carry = add_bit(carry, temp_carry, gel(pk, 1));
+                //cout << "C_1+C_2= " << GENtostr(decrypt_bit(sk, carry)) << endl;
+            }
+            //cout << "Checkpoint" << endl;
+            for(int i = m; i < n; i++){
+                gel(result, i + 1) = add_bit(gel(ct_1, i + 1), carry, gel(pk, 1));
+                carry = multiply_bit(gel(ct_1, i + 1), carry, pk);
+            }
+            gel(result, n + 1) = carry;
+        }
+        else{
+            gel(result, 1) = add_bit(gel(ct_1, 1), gel(ct_2, 1), gel(pk, 1));
+            carry =  multiply_bit(gel(ct_1, 1), gel(ct_2, 1), pk);
+            for(int i = 1; i < n; i++){
+                gel(result, i + 1) = add_bit(gel(ct_1, i + 1), gel(ct_2, i + 1), gel(pk, 1));
+                temp_carry = multiply_bit(gel(result, i + 1), carry, pk);
+                gel(result, i + 1) = add_bit(gel(result, i + 1), carry, gel(pk, 1));
+                carry =  multiply_bit(gel(ct_1, i + 1), gel(ct_2, i + 1), pk);
+                carry = add_bit(carry, temp_carry, gel(pk, 1));
+            }
+            for(int i = n; i < m; i++){
+                gel(result, i + 1) = add_bit(gel(ct_2, i + 1), carry, gel(pk, 1));
+                carry = multiply_bit(gel(ct_2, i + 1), carry, pk);
+            }
+            gel(result, m + 1) = carry;
         }
         //cout << "Checkpoint" << endl;
-        for(int i = m; i < n; i++){
-            gel(result, i + 1) = add_bit(gel(ct_1, i + 1), carry, gel(pk, 1));
-            carry = multiply_bit(gel(ct_1, i + 1), carry, pk);
-        }
-        gel(result, n + 1) = carry;
+        return result;
     }
-    else{
-        gel(result, 1) = add_bit(gel(ct_1, 1), gel(ct_2, 1), gel(pk, 1));
-        carry =  multiply_bit(gel(ct_1, 1), gel(ct_2, 1), pk);
-        for(int i = 1; i < n; i++){
-            gel(result, i + 1) = add_bit(gel(ct_1, i + 1), gel(ct_2, i + 1), gel(pk, 1));
-            temp_carry = multiply_bit(gel(result, i + 1), carry, pk);
-            gel(result, i + 1) = add_bit(gel(result, i + 1), carry, gel(pk, 1));
-            carry =  multiply_bit(gel(ct_1, i + 1), gel(ct_2, i + 1), pk);
-            carry = add_bit(carry, temp_carry, gel(pk, 1));
-        }
-        for(int i = n; i < m; i++){
-            gel(result, i + 1) = add_bit(gel(ct_2, i + 1), carry, gel(pk, 1));
-            carry = multiply_bit(gel(ct_2, i + 1), carry, pk);
-        }
-        gel(result, m + 1) = carry;
+
+    // Shifts ct right by i, for conventional multiplication
+    GEN multiplication_utility(GEN result, GEN ct, int i){
+        int n = lg(ct) - 1;
+        GEN temp = cgetg(n + i + 1, t_VEC);
+        for(int j = 0; j < i; j++)
+            gel(temp, j + 1) = gen_0;
+        for(int j = 0; j < n; j++)
+            gel(temp, j + 1 + i) = gel(ct, j + 1);
+        //cout << "temp=" << GENtostr(decrypt(sk, temp)) << " ";
+        result = addition_gate(result, temp, pk, n + i);
+        return result;
     }
-    //cout << "Checkpoint" << endl;
-    return result;
-}
 
-// Shifts ct right by i, for conventional multiplication
-GEN multiplication_utility(GEN result, GEN ct, GEN pk, GEN sk, int i){
-	int n = lg(ct) - 1;
-	GEN temp = cgetg(n + i + 1, t_VEC);
-	for(int j = 0; j < i; j++)
-		gel(temp, j + 1) = gen_0;
-	for(int j = 0; j < n; j++)
-		gel(temp, j + 1 + i) = gel(ct, j + 1);
-    cout << "temp=" << GENtostr(decrypt(sk, temp)) << " ";
-	result = addition_gate(result, temp, pk, n + i);
-	return result;
-}
+    // Multiplication gate for two encrypted integers
+    GEN multiplication_gate(GEN ct_1, GEN ct_2){
+        int n = lg(ct_1) - 1, m = lg(ct_2) - 1;
+        //cout << GENtostr(decrypt(sk, ct_1)) << endl;
+        //cout << GENtostr(decrypt(sk, ct_2)) << endl;
+        GEN result = cgetg(m + n + 1, t_VEC);
+        GEN temp = cgetg(n + 1, t_VEC);
+        for(int i = 0; i < m + n; i++)
+            gel(result, i + 1) = gen_0;
+        for(int j = 0; j < n; j++)
+            gel(result, j + 1) = multiply_bit(gel(ct_1, j + 1), gel(ct_2, 1), pk);
+        //cout << GENtostr(decrypt(sk, result)) << endl;
+        for(int i = 1; i < m; i++){
+            for(int j = 0; j < n; j++)
+                gel(temp, j + 1) = multiply_bit(gel(ct_1, j + 1), gel(ct_2, i + 1), pk);
+            result = multiplication_utility(result, temp, pk, sk, i);
+            //cout << "result=" << GENtostr(decrypt(sk, result)) << endl;
+        }
+        return result;
+    }*/
+};
 
-// Multiplication gate for two encrypted integers
-GEN multiplication_gate(GEN ct_1, GEN ct_2, GEN pk, GEN sk){
-	int n = lg(ct_1) - 1, m = lg(ct_2) - 1;
-	cout << GENtostr(decrypt(sk, ct_1)) << endl;
-	cout << GENtostr(decrypt(sk, ct_2)) << endl;
-	GEN result = cgetg(m + n + 1, t_VEC);
-	GEN temp = cgetg(n + 1, t_VEC);
-	for(int i = 0; i < m + n; i++)
-		gel(result, i + 1) = gen_0;
-	for(int j = 0; j < n; j++)
-		gel(result, j + 1) = multiply_bit(gel(ct_1, j + 1), gel(ct_2, 1), pk);
-	cout << GENtostr(decrypt(sk, result)) << endl;
-	for(int i = 1; i < m; i++){
-		for(int j = 0; j < n; j++)
-			gel(temp, j + 1) = multiply_bit(gel(ct_1, j + 1), gel(ct_2, i + 1), pk);
-		result = multiplication_utility(result, temp, pk, sk, i);
-        cout << "result=" << GENtostr(decrypt(sk, result)) << endl;
-	}
-	return result;
-}
+class ciphertext{
+public:
+    GEN value;
+    int degree;
+    cryptosystem* pkc;
 
-int main() {
+    ciphertext(){};
+
+    ciphertext(cryptosystem* PKC){
+        pkc = PKC;
+    }
+
+    ciphertext(cryptosystem* PKC, GEN m){
+        value = PKC->encrypt_bit(m);
+        degree = 1;
+        pkc = PKC;
+    }
+
+    GEN decrypt(){
+        return pkc->decrypt_bit(value);
+    }
+
+    ciphertext operator+(const ciphertext& ct_2){
+        ciphertext result(pkc);
+        result.value = pkc->add_bit(this->value, ct_2.value);
+        result.degree = max(this->degree, ct_2.degree);
+        return result;
+    }
+
+    ciphertext operator*(const ciphertext& ct_2){
+        ciphertext result(pkc);
+        result.value = pkc->multiply_bit(this->value, ct_2.value);
+        result.degree = this->degree + ct_2.degree;
+        return result;
+    }
+
+    void initialize(cryptosystem* PKC, GEN m){
+        value = PKC->encrypt_bit(m);
+        degree = 1;
+        pkc = PKC;
+    }
+};
+
+int main(){
     pari_init(6000000000, 2);
-    pari_sp ltop_super;
-    GEN sk, pk;
-    ifstream sk_file("secret_key.txt");
-    if(!sk_file) {
-        //printf("Error: Secret Key!");
-        ltop_super = avma;
-        sk = generate_secret_key();
-        sk = gerepilecopy(ltop_super, sk);
-        sk_file.close();
-        ofstream sk_file("secret_key.txt");
-        sk_file << GENtostr(sk);
-        sk_file.close();
+    cryptosystem pkc;
+    /*ciphertext ct_1(&pkc, stoi(1));
+    ciphertext ct_2(&pkc, stoi(0));
+    ciphertext ct_3 = ct_1 * ct_2;
+    print(ct_3.decrypt());
+    cout << ct_3.degree << endl;*/
+    ciphertext ct[100];
+    ciphertext result(&pkc, stoi(1));
+    for(int i = 0; i < 100; i++){
+        ct[i].initialize(&pkc, stoi(1));
+        result = result * ct[i];
+        if(result.decrypt() == gen_0)
+            cout << i << endl;
     }
-    else{
-        string secret_key;
-        sk_file >> secret_key;
-        sk = gp_read_str(secret_key.c_str());
-        //cout << GENtostr(sk) << endl;
-        sk_file.close();
-    }
-
-    FILE *pk_file = fopen("public_key.txt", "r");
-    if(!pk_file){
-        //printf("Error: Public Key");
-        fclose(pk_file);
-        pk = generate_public_key(sk);
-        ofstream pk_file("public_key.txt");
-        for(int i = 0; i < tau + gamma; i++)
-            pk_file << GENtostr(gel(pk, i + 1)) << endl;
-        pk_file.close();
-    }
-    else{
-        pk = cgetg(tau + 1 + gamma, t_VEC);
-        for(int i = 0; i < tau + gamma; i++){
-            gel(pk, i + 1) = gp_read_stream(pk_file);
-            //cout << GENtostr(gel(pk, i + 1)) << endl;
-        }
-        fclose(pk_file);
-    }
-
-    //pk = generate_public_key(sk);
-
-    //printf("Hello!");
-    //GEN ct_1 = encrypt_bit(sk, pk, stoi(0));
-    //GEN ct_2 = encrypt_bit(sk, pk, stoi(1));
-
-    GEN ct_1 = encrypt(sk, pk, stoi(7));
-    GEN ct_2 = encrypt(sk, pk, stoi(7));
-
-
-    GEN pt = decrypt(sk, multiplication_gate(ct_1, ct_2, pk, sk));
-    //GEN pt = decrypt(sk, addition_gate(ct_1, ct_2, pk, -1));
-    //GEN pt = decrypt(sk, multiplication_gate(ct_1, ct_2, pk));
-
-    //GEN pt = decrypt_bit(sk, multiply_bit(ct_1, ct_2, pk));
-    //GEN pt = decrypt_bit(sk, add_bit(ct_2, multiply_bit(ct_2, ct_2, pk), pk));
-
-    //GEN pt = multiplication_gate(decimal_to_binary_rev(stoi(6)), decimal_to_binary_rev(stoi(4)), pk);
-    
-    cout << GENtostr(pt) << endl;
-    /*for(int i = 0; i < lg(pt) - 1; i++)
-        cout << GENtostr(gel(pt, i + 1)) << endl;
-    */
+    print(result.decrypt());
+    cout << result.degree << endl;
     pari_close();
 
     return 0;
