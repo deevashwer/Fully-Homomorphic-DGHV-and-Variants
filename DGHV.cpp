@@ -334,21 +334,11 @@ public:
 int main(){
     pari_init(6000000000, 2);
     cryptosystem pkc;
-    /*ciphertext ct_1(&pkc, stoi(1));
+    ciphertext ct_1(&pkc, stoi(1));
     ciphertext ct_2(&pkc, stoi(0));
     ciphertext ct_3 = ct_1 * ct_2;
     print(ct_3.decrypt());
-    cout << ct_3.degree << endl;*/
-    ciphertext ct[100];
-    ciphertext result(&pkc, stoi(1));
-    for(int i = 0; i < 100; i++){
-        ct[i].initialize(&pkc, stoi(1));
-        result = result * ct[i];
-        if(result.decrypt() == gen_0)
-            cout << i << endl;
-    }
-    print(result.decrypt());
-    cout << result.degree << endl;
+    cout << ct_3.degree << endl;
     pari_close();
 
     return 0;
