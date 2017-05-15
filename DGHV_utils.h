@@ -12,13 +12,23 @@
 #define tau 100//158
 #define Theta 150
 #define theta 15
-#define kappa (gamma + 2)
+#define kappa (gamma + 3)
 
 #define RAND_MAX (1 << rho + 1)
 
 struct timeval tv;
 
+struct sparse_matrix{
+    GEN Theta_vector;
+    GEN modified_secret_key;
+};
+
 using namespace std;
+
+void print(GEN x){
+    cout << GENtostr(x) << endl;
+    return;
+}
 
 // Generate errors between (0, 2^rho)
 int generate_error(){
@@ -54,48 +64,23 @@ GEN decimal_to_binary_rev(GEN m){
     return binary_m;
 }
 
-// Returns secondary error of sigma bits, used at the time of encryption. 
-GEN generate_secondary_error(){
-    pari_sp ltop, lbot;
+// Returns random integer of bit_length bits.
+GEN generate_random(int bit_length){
     gettimeofday(&tv, NULL);
-    srand(tv.tv_usec + tv.tv_sec*1000000);
-    GEN r = stoi(rand());
-    for(int i = sigma - 33; i >= 0; i -= 32){
-        ltop = avma;
-        GEN temp = gshift(stoi(rand()), i);
-        lbot = avma;
-        gaddz(r, temp, r);
-        gerepile(ltop, lbot, r);
-    }
+    setrand(stoi(tv.tv_usec + tv.tv_sec*1000000));
+    GEN r = randomi(gshift(gen_1, bit_length));
     return r;
 }
 
 
 // Outputs integers of the form x = sk*(q) + r, where q is a random integer in the range (0, 2^(gamma-eta)) and r is the primary error
 GEN generate_x(GEN sk){
-    pari_sp ltop, lbot, ltop_super;
-    ltop_super =  avma;
     gettimeofday(&tv, NULL);
-    srand(tv.tv_usec + tv.tv_sec*1000000);
-    GEN q;
-    for(int i = gamma - eta; i >= 0; i -= 32){
-        if(i == gamma - eta){
-            q = gshift(stoi(rand()), i);
-            continue;
-        }
-        ltop = avma;
-        GEN temp = gshift(stoi(rand()), i);
-        lbot = avma;
-        gaddz(q, temp, q);
-        gerepile(ltop, lbot, q);
-    }
-    gaddz(q, stoi(rand()), q);
-    GEN r = stoi(generate_error());
+    setrand(stoi(tv.tv_usec + tv.tv_sec*1000000));
+    GEN q = generate_random(gamma - eta);
+    GEN r = generate_random(rho);
     GEN x = gmul(sk, q);
     gaddz(x, r, x);
-    //cout << GENtostr(r) << endl;
-    //cout << GENtostr(Fp_red(x, sk)) << endl;
-    x = gerepilecopy(ltop_super, x);
     return x;
 }
 
@@ -128,4 +113,41 @@ GEN generate_x_i(GEN sk, int length){
     //cout << GENtostr(Fp_red(x, sk)) << endl;
     x = gerepilecopy(ltop_super, x);
     return x;
+}
+
+int calculate_bit_length(GEN x){
+    int bit_length = 1;
+    while(mpcmp(x, gen_1) > 0){
+        x = gdivexact(x, gen_2);
+        bit_length++;
+    }
+    return bit_length;
+}
+
+void generate_sparse_matrix(sparse_matrix& S, GEN x_p){
+    //sparse_matrix S;
+    GEN theta_vector = cgetg(theta + 1, t_VEC);
+    setrand(stoi(tv.tv_usec + tv.tv_sec*1000000));
+    for(int i = 0; i < theta - 1; i++)
+        gel(theta_vector, i + 1) = randomi(x_p);
+    gel(theta_vector, theta) = x_p;
+    theta_vector = sort(theta_vector);
+    for(int i = theta; i > 1; i--)
+        gsubz(gel(theta_vector, i), gel(theta_vector, i - 1), gel(theta_vector, i));
+    S.modified_secret_key = cgetg(Theta + 1, t_VEC);
+    for(int i = 0; i < Theta; i++)
+        gel(S.modified_secret_key, i + 1) = gen_0;
+    S.Theta_vector = cgetg(Theta + 1, t_VEC);
+    ulong temp;
+    for(int i = 0; i < theta; i++){
+        temp = random_Fl(Theta);
+        while(mpcmp(gel(S.modified_secret_key, temp + 1), gen_0) != 0)
+            temp = random_Fl(Theta);
+        gel(S.Theta_vector, temp + 1) = gel(theta_vector, i + 1);
+        gel(S.modified_secret_key, temp + 1) = gen_1;
+    }
+    for(int i = 0; i < Theta; i++)
+        if(mpcmp(gel(S.modified_secret_key, i + 1), gen_0) == 0)
+            gel(S.Theta_vector, i + 1) = randomi(x_p);
+    return;// S;
 }
