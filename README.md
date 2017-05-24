@@ -1,4 +1,4 @@
-(Leveled) Homomorphic C++ implementation of DGHV scheme using Pari C library.
+(Leveled) Homomorphic C++ implementation of DGHV scheme using GNU MP library and Pari C library.
 The implementation supports addition and multiplication gates on integers.
 
 For the parameters taken in the implementation, the SwHE scheme supports 32 multiplications.
