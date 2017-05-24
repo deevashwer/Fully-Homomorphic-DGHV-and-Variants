@@ -240,8 +240,8 @@ public:
         }while(even.size() != 0);
         //cout << "Checkpoint " << endl;
         for(int i = 1; i < gamma + 1; i++){
-            generate_x_i(pk[tau + i -1], sk, gamma - eta + i - 1);
-            mpz_mul(pk[tau + i - 1], pk[tau + i -1], two);
+            generate_x_i(pk[tau + i - 1], sk, gamma - eta + i - 1);
+            mpz_mul(pk[tau + i - 1], pk[tau + i - 1], two);
             //cout << "Checkpoint " << i << endl;
         }
         mpz_clears(tmp, max, NULL);
@@ -270,6 +270,8 @@ public:
             if(included[i - 1]) {
                 mpz_mul(tmp, pk[i], two);
                 mpz_add(ct, ct, tmp);
+                //mpz_mod(tmp, ct, sk);
+                //cout << i << " " << tmp << endl;
             }
         mpz_mod(ct, ct, pk[0]);
         mpz_clear(tmp);
@@ -399,6 +401,8 @@ public:
         mpz_init(m);
         decrypt(m);
         cout << "Degree: " << degree << ", Decrypted Bit: " << m << endl;
+        mpz_mod(m, value, pkc->sk);
+        cout << "Error: " << m << endl;
         mpz_clear(m);
     }
     
@@ -449,45 +453,44 @@ public:
         for(int i = 0; i < Theta; i++){
             //cout << i << " ";
             for(int j = 0; j < n + 1; j++){
-                mpz_mul(encrypted_z[i][j], encrypted_z[i][j], encrypted_sk[i]);
+                PKC->AND_GATE(encrypted_z[i][j], encrypted_z[i][j], encrypted_sk[i]);
                 a[i][j].custom_setup(encrypted_z[i][j], 2, PKC);
                 //PKC->decrypt_bit(temp, a[i][j].value);
                 //cout << temp << " ";
                 //mpz_clear(encrypted_z[i][j]);
+                //a[i][j].print();
             }
             //cout << endl;
             mpz_clear(encrypted_sk[i]);
         }
-        ciphertext dp[n - 1][Theta + 1];
+        ciphertext dp[(int) pow(2, n - 4) + 1][Theta + 1];
         ciphertext W[n + 1][n + 1];
+        //int dummy = 1;
         for(int i = 1; i < n - 1; i++)
-            dp[i][0].initialize(PKC, zero);
+            dp[i][0].custom_setup(zero, 1, PKC);
         for(int i = 0; i < Theta + 1; i++)
-            dp[0][i].initialize(PKC, one);
+            dp[0][i].custom_setup(one, 1, PKC);
         for(int k = 0; k < n + 1; k++){
-            for(int i = 1; i < n - 1; i++)
+            for(int i = 1; i < pow(2, n - 4) + 1; i++){
                 for(int j = 1; j < Theta + 1; j++){
                     //cout << k << " " << i << " " << j << endl;
-                    dp[i][j] = (a[j - 1][k] * dp[i - 1][j - 1]);
+                    dp[i][j] = a[j - 1][k] * dp[i - 1][j - 1];// + dp[i][j - 1];
                     dp[i][j] = dp[i][j] + dp[i][j - 1];
-                    if(j == Theta){
+                    /*if(j == Theta && i == dummy){
                         cout << k << " " << i << " " << j << " ";
                         dp[i][j].print();
-                    }
+                        dummy *= 2;
+                    }*/
                 }
-            if(k < n - 2){
-                for(int i = k + 1; i < n + 1; i++)
-                    W[k][i].initialize(PKC, zero);
+            }
+            //dummy = 1;
+            if(k < n - 3){
                 for(int i = 0; i < k + 1; i++)
-                    W[k][i].custom_setup(dp[k + 1 - i][Theta + 1].value, dp[k + 1 - i][Theta + 1].degree, PKC);
+                    W[k][i].custom_setup(dp[(int) pow(2, k - i)][Theta].value, dp[(int) pow(2, k - i)][Theta].degree, PKC);
             }
             else{
-                for(int i = 0; i < (n - 1 - k); i++)
-                    W[k][i].initialize(PKC, zero);
-                for(int i = 0; i < n - 2; i++)
-                    W[k][n - 1 - k + i].custom_setup(dp[n - 2 - i][Theta + 1].value, dp[n - 2 - i][Theta + 1].degree, PKC);
-                for(int i = 2*n - 3 - k; i < n + 1; i++)
-                    W[k][i].initialize(PKC, zero);
+                for(int i = 0; i < n - 3; i++)
+                    W[k][k - n + 4 + i].custom_setup(dp[(int) pow(2, n - 4 - i)][Theta].value, dp[(int) pow(2, n - 4 - i)][Theta].degree, PKC);
             }
             //for(int i = 0; i < Theta; i++)
                 //a[i][k].clean();
@@ -499,6 +502,8 @@ public:
             }
             cout << endl;
         }
+        
+        two_for_three_trick();
                 
     }
 };
@@ -513,14 +518,10 @@ int main(){
     ct.recrypt(&pkc);
     /*ciphertext ct[100];
     ciphertext result(&pkc, one);
-    mpz_t temp;
-    mpz_init(temp);
     for(int i = 0; i < 100; i++){
         ct[i].initialize(&pkc, one);
-        result = result ^ ct[i];
+        result = (result * ct[i]);
         result.print();
-        mpz_mod(temp, result.value, pkc.sk);
-        cout << temp << endl;
     }*/
     return 0;
 }

@@ -6,8 +6,8 @@
 #include <gmp.h>
 #include <gmpxx.h>
 
-#define rho 10//26
-#define sigma 20//42
+#define rho 5//26
+#define sigma 15//42
 #define eta 988
 #define gamma 9216//147456
 #define tau 100//158
@@ -71,6 +71,13 @@ void generate_random(mpz_t x, int bit_size){
     srand(tv.tv_usec + tv.tv_sec*1000000);
     mpz_t tmp;
     mpz_init(tmp);
+    if(bit_size < 33){
+        mpz_set_ui(tmp, rand());
+        int temp = (1 << bit_size);
+        mpz_mod_ui(x, tmp, temp);
+        mpz_clear(tmp);
+        return;
+    }
     for(int i = bit_size - 32; i >= 0; i -= 32){
         mpz_set_ui(tmp, rand());
         mpz_mul_2exp(tmp, tmp, i);
