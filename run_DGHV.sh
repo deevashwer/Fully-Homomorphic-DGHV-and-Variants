@@ -1,4 +1,5 @@
 #!/bin/bash
 
-g++ -lpari DGHV.cpp -o DGHV.out
+g++ -lgmp -lgmpxx DGHV.cpp -o DGHV.out
+
 ./DGHV.out

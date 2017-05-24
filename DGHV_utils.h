@@ -1,9 +1,10 @@
 #include <iostream>
 #include <cstdlib>
-#include <pari/pari.h>
 #include <ctime>
 #include <sys/time.h>
 #include <vector>
+#include <gmp.h>
+#include <gmpxx.h>
 
 #define rho 10//26
 #define sigma 20//42
@@ -13,141 +14,139 @@
 #define Theta 150
 #define theta 15
 #define kappa (gamma + 3)
+#define n 8
 
 #define RAND_MAX (1 << rho + 1)
 
 struct timeval tv;
-
-struct sparse_matrix{
-    GEN Theta_vector;
-    GEN modified_secret_key;
-};
+mpz_t zero, one, two;
 
 using namespace std;
 
-void print(GEN x){
-    cout << GENtostr(x) << endl;
+void sort_utility(mpz_t array[], int l, int m, int r){
+    //cout << l << " " << m << " " << r << endl;
+    int i, j, k;
+    int n_1 = m - l + 1, n_2 = r - m;
+    mpz_t L[n_1], R[n_2];
+    for(i = 0; i < n_1; i++){
+        mpz_init(L[i]);
+        mpz_set(L[i], array[l + i]);
+    }
+    for (j = 0; j < n_2; j++){
+        mpz_init(R[j]);
+        mpz_set(R[j], array[m + 1 + j]);
+    }
+    i = 0, j = 0, k = l;
+    while (i < n_1 && j < n_2){
+        if (mpz_cmp(L[i], R[j]) < 1)
+            mpz_set(array[k++], L[i++]);
+        else
+            mpz_set(array[k++], R[j++]);
+    }
+    
+    while (i < n_1)
+        mpz_set(array[k++], L[i++]);
+    
+    while (j < n_2)
+        mpz_set(array[k++], R[j++]);
+    
+    for(i = 0; i < n_1; i++)
+        mpz_clear(L[i]);
+    for (j = 0; j < n_2; j++)
+        mpz_clear(R[j]);
+}
+
+void sort_huge_numbers(mpz_t array[], int l, int r){
+    if(l < r){
+        int m = (l + r)/2;
+        sort_huge_numbers(array, l, m);
+        sort_huge_numbers(array, m + 1, r);
+        sort_utility(array, l, m, r);
+    }
     return;
 }
 
-// Generate errors between (0, 2^rho)
-int generate_error(){
-    return (rand() % RAND_MAX);// - (RAND_MAX / 2);
-}
-
-// Returns a reverse bit vector of integer m
-GEN decimal_to_binary_rev(GEN m){
-    if(gcmp(m, gen_0) == 0){
-        GEN binary_m = cgetg(2, t_VEC);
-        gel(binary_m, 1) = gen_0;
-        return binary_m;
-    }
-    vector<bool> bits;
-    GEN temp;
-    while(mpcmp(m, gen_1) > 0){
-        if(mpodd(m) == 1)
-            bits.push_back(true);
-        else
-            bits.push_back(false);
-        m = gdivexact(m, gen_2);
-    }
-    bits.push_back(true);
-    GEN binary_m = cgetg(bits.size() + 1, t_VEC);
-    int i = 1;
-    vector<bool>::iterator it;
-    for(it = bits.begin(); it != bits.end(); it++)
-        if(*it == true)
-            gel(binary_m, i++) = gen_1;
-        else
-            gel(binary_m, i++) = gen_0;
-    bits.clear();
-    return binary_m;
-}
-
-// Returns random integer of bit_length bits.
-GEN generate_random(int bit_length){
+void generate_random(mpz_t x, int bit_size){
     gettimeofday(&tv, NULL);
-    setrand(stoi(tv.tv_usec + tv.tv_sec*1000000));
-    GEN r = randomi(gshift(gen_1, bit_length));
-    return r;
+    srand(tv.tv_usec + tv.tv_sec*1000000);
+    mpz_t tmp;
+    mpz_init(tmp);
+    for(int i = bit_size - 32; i >= 0; i -= 32){
+        mpz_set_ui(tmp, rand());
+        mpz_mul_2exp(tmp, tmp, i);
+        mpz_add(x, x, tmp);
+    }
+    mpz_add_ui(x, x, rand());
+    mpz_clear(tmp);
 }
-
 
 // Outputs integers of the form x = sk*(q) + r, where q is a random integer in the range (0, 2^(gamma-eta)) and r is the primary error
-GEN generate_x(GEN sk){
+void generate_x(mpz_t x, mpz_t sk){
     gettimeofday(&tv, NULL);
-    setrand(stoi(tv.tv_usec + tv.tv_sec*1000000));
-    GEN q = generate_random(gamma - eta);
-    GEN r = generate_random(rho);
-    GEN x = gmul(sk, q);
-    gaddz(x, r, x);
-    return x;
+    srand(tv.tv_usec + tv.tv_sec*1000000);
+    mpz_t q, r;
+    mpz_inits(q, r, NULL);
+    generate_random(q, gamma - eta);
+    generate_random(r, rho);
+    mpz_mul(x, q, sk);
+    mpz_add(x, r, x);
+    mpz_clears(q, r, NULL);
 }
 
 // Outputs x_i s.t x_i = q_i*p + r, q_i lies in the range (2^(gamma+length-1-eta), 2^(gamma+length-eta))
-GEN generate_x_i(GEN sk, int length){
-    pari_sp ltop, lbot, ltop_super;
-    ltop_super =  avma;
+void generate_x_i(mpz_t x_i, mpz_t sk, int length){
+    mpz_t tmp, q, r;
+    mpz_inits(tmp, q, r, NULL);
+    mpz_mul_2exp(q, one, length - 1);
     gettimeofday(&tv, NULL);
     srand(tv.tv_usec + tv.tv_sec*1000000);
-    GEN q;
-    for(int i = length - eta; i >= 0; i -= 32){
-        if(i == length - eta){
-            unsigned temp = rand();
-            while((temp/(1 << 31)) > 0)
-                temp = rand();
-            q = gshift(stoi(temp), i);
-            continue;
-        }
-        ltop = avma;
-        GEN temp = gshift(stoi(rand()), i);
-        lbot = avma;
-        gaddz(q, temp, q);
-        gerepile(ltop, lbot, q);
+    for(int i = length - 32; i >= 0; i -= 32){
+        //GEN temp = gshift(stoi(rand()), i);
+        mpz_set_ui(tmp, rand());
+        mpz_mul_2exp(tmp, tmp, i);
+        mpz_add(q, tmp, q);
     }
-    gaddz(q, stoi(rand()), q);
-    GEN r = stoi(generate_error());
-    GEN x = gmul(sk, q);
-    gaddz(x, r, x);
-    //cout << GENtostr(r) << endl;
-    //cout << GENtostr(Fp_red(x, sk)) << endl;
-    x = gerepilecopy(ltop_super, x);
-    return x;
+    mpz_add_ui(q, q, rand());
+    generate_random(r, rho);
+    mpz_mul(x_i, q, sk);
+    mpz_add(x_i, r, x_i);
+    mpz_clears(tmp, q, r, NULL);
 }
 
-int calculate_bit_length(GEN x){
-    int bit_length = 1;
-    while(mpcmp(x, gen_1) > 0){
-        x = gdivexact(x, gen_2);
-        bit_length++;
+void generate_sparse_matrix(mpz_t u_i[], bool modified_sk[], mpz_t x_p){
+    srand(tv.tv_usec + tv.tv_sec*1000000);
+    mpz_t theta_vector[theta];
+    mpz_t sum;
+    mpz_init(sum);
+    for(int i = 0; i < theta - 1; i++){
+        mpz_init(theta_vector[i]);
+        generate_random(theta_vector[i], kappa - eta);
+        mpz_add(sum, sum, theta_vector[i]);
     }
-    return bit_length;
-}
-
-void generate_sparse_matrix(sparse_matrix& S, GEN x_p){
-    //sparse_matrix S;
-    GEN theta_vector = cgetg(theta + 1, t_VEC);
-    setrand(stoi(tv.tv_usec + tv.tv_sec*1000000));
-    for(int i = 0; i < theta - 1; i++)
-        gel(theta_vector, i + 1) = randomi(x_p);
-    gel(theta_vector, theta) = x_p;
-    theta_vector = sort(theta_vector);
-    for(int i = theta; i > 1; i--)
-        gsubz(gel(theta_vector, i), gel(theta_vector, i - 1), gel(theta_vector, i));
-    S.modified_secret_key = cgetg(Theta + 1, t_VEC);
+    mpz_init(theta_vector[theta - 1]);
+    mpz_set(theta_vector[theta - 1], x_p);
+    sort_huge_numbers(theta_vector, 0, theta - 1);
+    for(int i = theta - 1; i > 0; i--)
+        mpz_sub(theta_vector[i], theta_vector[i], theta_vector[i - 1]);
     for(int i = 0; i < Theta; i++)
-        gel(S.modified_secret_key, i + 1) = gen_0;
-    S.Theta_vector = cgetg(Theta + 1, t_VEC);
-    ulong temp;
+        modified_sk[i] = false;
+    int temp;
     for(int i = 0; i < theta; i++){
-        temp = random_Fl(Theta);
-        while(mpcmp(gel(S.modified_secret_key, temp + 1), gen_0) != 0)
-            temp = random_Fl(Theta);
-        gel(S.Theta_vector, temp + 1) = gel(theta_vector, i + 1);
-        gel(S.modified_secret_key, temp + 1) = gen_1;
+        temp = rand() % Theta;
+        while(modified_sk[temp] == true)
+            temp = rand() % Theta;
+        mpz_set(u_i[temp], theta_vector[i]);
+        modified_sk[temp] = true;
     }
     for(int i = 0; i < Theta; i++)
-        if(mpcmp(gel(S.modified_secret_key, i + 1), gen_0) == 0)
-            gel(S.Theta_vector, i + 1) = randomi(x_p);
-    return;// S;
+        if(modified_sk[i] == false)
+            generate_random(u_i[i], kappa - eta);
+    for(int i = 0; i < theta; i++)
+        mpz_clear(theta_vector[i]);
+    return;
+}
+
+void two_for_three_trick(){
+    
+    return;
 }
