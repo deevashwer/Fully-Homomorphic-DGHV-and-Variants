@@ -356,6 +356,20 @@ public:
     }
 };
 
+void two_for_three_trick(mpz_t p, mpz_t q, mpz_t a, mpz_t b, mpz_t c, cryptosystem* pkc){
+    mpz_t temp_1, temp_2, temp_3;
+    mpz_inits(temp_1, temp_2, temp_3, NULL);
+    pkc->XOR_GATE(temp_2, a, b);
+    pkc->XOR_GATE(temp_2, temp_2, c);
+    pkc->AND_GATE(temp_1, a, b);
+    pkc->XOR_GATE(temp_3, a, b);
+    pkc->AND_GATE(temp_3, temp_3, c);
+    pkc->AND_GATE(temp_1, temp_1, temp_3);
+    mpz_set(p, temp_1);
+    mpz_set(q, temp_2);
+    return;
+}
+
 class ciphertext{
 public:
     mpz_t value;
@@ -502,8 +516,41 @@ public:
             }
             cout << endl;
         }
-        
-        two_for_three_trick();
+        int k = 0, l = 0, size = n + 1;
+        while(size > 2){
+            k = 0, l = 0;
+            while(size > (k + 2)){
+                PKC->XOR_GATE(W[l + 1][0].value, W[k][0].value, W[k + 1][0].value);
+                PKC->XOR_GATE(W[l + 1][0].value, W[l + 1][0].value, W[k + 2][0].value);
+                //W[l + 1][0] = W[k][0] + W[k + 1][0] + W[k + 2][0];
+                for(int j = 1; j < n + 1; j++)
+                    two_for_three_trick(W[l][j - 1].value, W[l + 1][j].value, W[k][j].value, W[k + 1][j].value, W[k + 2][j].value, PKC);
+                mpz_set(W[l][n].value, zero);
+                l += 2;
+                k += 3;
+            }
+            if((k + 2) == size){
+                for(int j = 0; j < n + 1; j++){
+                    mpz_set(W[l][j].value, W[k][j].value);
+                    mpz_set(W[l + 1][j].value, W[k + 1][j].value);
+                }
+                l += 2;
+            }
+            else if((k + 1) == size){
+                for(int j = 0; j < n + 1; j++)
+                    mpz_set(W[l][j].value, W[k][j].value);
+                l += 1;
+            }
+            size = l;
+        }
+        cout << endl;
+        for(int i = 0; i < 2; i++){
+            for(int j = 0; j < n + 1; j++){
+                PKC->decrypt_bit(temp, W[i][j].value);
+                cout << temp << " ";
+            }
+            cout << endl;
+        }
                 
     }
 };
@@ -516,9 +563,9 @@ int main(){
     cryptosystem pkc;
     ciphertext ct(&pkc, one);
     ct.recrypt(&pkc);
-    /*ciphertext ct[100];
+    /*ciphertext ct[1000];
     ciphertext result(&pkc, one);
-    for(int i = 0; i < 100; i++){
+    for(int i = 0; i < 1000; i++){
         ct[i].initialize(&pkc, one);
         result = (result * ct[i]);
         result.print();
