@@ -284,7 +284,7 @@ public:
     }
     
     // AND gate for 2 encrypted bits
-    void AND_GATE(mpz_t result, mpz_t ct_1, const mpz_t ct_2){
+    void AND_GATE(mpz_t result, mpz_t ct_1, mpz_t ct_2){
         mpz_mul(result, ct_1, ct_2);
         for(int i = 0; i < gamma; i++)
             mpz_mod(result, result, pk[gamma + tau - i - 1]);
@@ -292,13 +292,13 @@ public:
     }
     
     // XOR gate for 2 encrypted bits
-    void XOR_GATE(mpz_t result, mpz_t ct_1, const mpz_t ct_2){
+    void XOR_GATE(mpz_t result, mpz_t ct_1, mpz_t ct_2){
         mpz_add(result, ct_1, ct_2);
         mpz_mod(result, result, pk[0]);
     }
     
     // OR gate for 2 encrypted bits
-    void OR_GATE(mpz_t result, mpz_t ct_1, const mpz_t ct_2){
+    void OR_GATE(mpz_t result, mpz_t ct_1, mpz_t ct_2){
         mpz_t tmp;
         mpz_init(tmp);
         XOR_GATE(result, ct_1, one);
@@ -330,10 +330,10 @@ public:
         for(int i = 0; i < Theta; i++){
             mpz_mul(num, u_i[i], ct);
             z_i[i].initialize(num, den, n);
-            if(modified_sk[i] == true){
+            /*if(modified_sk[i] == true){
             //    cout << i << " ";
                 z_i[i].print_real();
-            }
+            }*/
         }
         mpz_clears(num, den, NULL);
         for(int i = 0; i < Theta; i++)
@@ -364,7 +364,7 @@ void two_for_three_trick(mpz_t p, mpz_t q, mpz_t a, mpz_t b, mpz_t c, cryptosyst
     pkc->AND_GATE(temp_1, a, b);
     pkc->XOR_GATE(temp_3, a, b);
     pkc->AND_GATE(temp_3, temp_3, c);
-    pkc->AND_GATE(temp_1, temp_1, temp_3);
+    pkc->XOR_GATE(temp_1, temp_1, temp_3);
     mpz_set(p, temp_1);
     mpz_set(q, temp_2);
     return;
@@ -420,21 +420,21 @@ public:
         mpz_clear(m);
     }
     
-    ciphertext operator+(const ciphertext& ct_2){
+    ciphertext operator+(ciphertext& ct_2){
         ciphertext result(pkc);
         pkc->XOR_GATE(result.value, this->value, ct_2.value);
         result.degree = max(this->degree, ct_2.degree);
         return result;
     }
     
-    ciphertext operator*(const ciphertext& ct_2){
+    ciphertext operator*(ciphertext& ct_2){
         ciphertext result(pkc);
         pkc->AND_GATE(result.value, this->value, ct_2.value);
         result.degree = this->degree + ct_2.degree;
         return result;
     }
     
-    ciphertext operator^(const ciphertext& ct_2){
+    ciphertext operator^(ciphertext& ct_2){
         ciphertext result(pkc);
         pkc->OR_GATE(result.value, this->value, ct_2.value);
         result.degree = this->degree + ct_2.degree;
@@ -509,13 +509,13 @@ public:
             //for(int i = 0; i < Theta; i++)
                 //a[i][k].clean();
         }
-        for(int i = 0; i < n + 1; i++){
+        /*for(int i = 0; i < n + 1; i++){
             for(int j = 0; j < n + 1; j++){
                 PKC->decrypt_bit(temp, W[i][j].value);
                 cout << temp << " ";
             }
             cout << endl;
-        }
+        }*/
         int k = 0, l = 0, size = n + 1;
         while(size > 2){
             k = 0, l = 0;
@@ -543,15 +543,25 @@ public:
             }
             size = l;
         }
-        cout << endl;
+        /*cout << endl;
         for(int i = 0; i < 2; i++){
             for(int j = 0; j < n + 1; j++){
                 PKC->decrypt_bit(temp, W[i][j].value);
                 cout << temp << " ";
             }
             cout << endl;
-        }
-                
+        }*/
+        
+        mpz_t c_p_bit;
+        mpz_init(c_p_bit);
+        PKC->AND_GATE(c_p_bit, W[0][1].value, W[1][1].value);
+        PKC->XOR_GATE(c_p_bit, c_p_bit, W[1][0].value);
+        PKC->XOR_GATE(c_p_bit, c_p_bit, W[0][0].value);
+        if(mpz_odd_p(value) == 0)
+            mpz_add(c_p_bit, c_p_bit, one);
+        mpz_set(value, c_p_bit);
+        pkc = PKC;
+        return;
     }
 };
 
@@ -561,14 +571,17 @@ int main(){
     mpz_set_ui(one, 1);
     mpz_set_ui(two, 2);
     cryptosystem pkc;
-    ciphertext ct(&pkc, one);
-    ct.recrypt(&pkc);
-    /*ciphertext ct[1000];
-    ciphertext result(&pkc, one);
-    for(int i = 0; i < 1000; i++){
+    //ciphertext ct(&pkc, one);
+    //ct.recrypt(&pkc);
+    ciphertext ct[350];
+    ciphertext result(&pkc, zero);
+    for(int i = 0; i < 350; i++){
         ct[i].initialize(&pkc, one);
         result = (result * ct[i]);
-        result.print();
-    }*/
+        //result.print();
+    }
+    result.print();
+    result.recrypt(&pkc);
+    result.print();
     return 0;
 }

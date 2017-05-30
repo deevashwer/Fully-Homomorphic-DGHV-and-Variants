@@ -6,15 +6,15 @@
 #include <gmp.h>
 #include <gmpxx.h>
 
-#define rho 5//26
-#define sigma 15//42
-#define eta 988
+#define rho 2//26
+#define sigma 5//42
+#define eta 3000
 #define gamma 9216//147456
 #define tau 100//158
-#define Theta 150
-#define theta 15
+#define Theta 20
+#define theta 4
 #define kappa (gamma + 3)
-#define n 8
+#define n 6
 
 #define RAND_MAX (1 << rho + 1)
 
@@ -150,10 +150,5 @@ void generate_sparse_matrix(mpz_t u_i[], bool modified_sk[], mpz_t x_p){
             generate_random(u_i[i], kappa - eta);
     for(int i = 0; i < theta; i++)
         mpz_clear(theta_vector[i]);
-    return;
-}
-
-void two_for_three_trick(){
-    
     return;
 }
