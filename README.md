@@ -6,5 +6,5 @@ For the parameters taken in the implementation, the SwHE scheme supports approxi
 I've used rand(), seeded with system time to generate random numbers, which is cryptographically insecure.
 But, this is not an industrial grade implementation.
 
-For the current parameters, here's an example of recrypt:
+For the current parameters, here's an example of recrypt (ignore the degree after recrypt, need to fix that):
 ![](./Recrypt_Example.png)
