@@ -7,3 +7,4 @@ I've used rand(), seeded with system time to generate random numbers, which is c
 But, this is not an industrial grade implementation.
 
 For the current parameters, here's an example of recrypt:
+![](./Recrypt_Example.png)
