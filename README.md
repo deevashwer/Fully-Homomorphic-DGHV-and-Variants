@@ -1,7 +1,5 @@
-(Leveled) Homomorphic C++ implementation of DGHV scheme using GNU MP library and Pari C library.
-The implementation supports addition and multiplication gates on integers.
-
-For the parameters taken in the implementation, the SwHE scheme supports approximately 350 multiplications.
+Fully Homomorphic C++ implementation of DGHV scheme using GNU MP library and Pari C library.
+The repository also has implementations of improvements proposed by J.S. Coron et al.
 
 I've used rand(), seeded with system time to generate random numbers, which is cryptographically insecure.
 But, this is not an industrial grade implementation.
